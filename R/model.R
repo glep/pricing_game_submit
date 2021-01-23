@@ -28,6 +28,27 @@ preprocess_X_data <- function (x_raw){
 
 # Feel free to add other functions/constants to use in your model.
 
+define_recipe <- function(df) {
+  recipe(
+    data = df[1, ],
+    formula = claim_amount ~ .
+  ) %>% 
+    # update_role(expo, new_role = "weight") %>% 
+    # update_role(unique_id, new_role = "id") %>% 
+    update_role(id_policy, new_role = "policy_number") %>% 
+    # update_role(c(year), new_role = "control") %>% 
+    # update_role(claim, new_role = "freq_outcome") %>% 
+    # update_role(fold, new_role = "cv_fold") %>% 
+    step_mutate(density = population / town_surface_area, role = "predictor") %>% 
+    step_range(c(drv_age1, drv_age2), min = 18, max = 75) %>% 
+    step_mutate(drv_age2 = if_else(drv_drv2 == "Yes", true = drv_age2, false = -10)) %>% 
+    step_meanimpute(intersect(all_numeric(), all_predictors())) %>%
+    step_novel(all_nominal()) %>%
+    step_string2factor(all_nominal()) %>% 
+    step_modeimpute(intersect(all_nominal(), all_predictors())) %>%
+    step_knnimpute(c(vh_speed, vh_value, vh_weight)) %>% 
+    step_other(vh_make_model, threshold = 5)
+}
 
 
 fit_model <- function (x_raw, y_raw){
@@ -49,13 +70,44 @@ fit_model <- function (x_raw, y_raw){
 
   # First, create all new features, if necessary
   
+  df <- bind_cols(y_raw, x_raw) %>% as_tibble() 
   
-  # YOUR CODE HERE ------------------------------------------------------
-  fit_lm = lm(unlist(ydata) ~ 1) # toy linear model
+  rec <- define_recipe(df) %>% prep(training = df, retain = FALSE)
+  baked_data <- bake(rec, new_data = df)
   
-  # ---------------------------------------------------------------------
-  # The result trained_model is something that you will save in the next section
-  return(fit_lm)  # return(trained_model)
+  res_gam <- 
+    bam(
+      formula = claim_amount ~
+        s(pol_no_claims_discount, bs = "tp") +
+        pol_coverage +
+        s(pol_duration, bs = "tp") +
+        s(pol_sit_duration, bs = "tp") +
+        pol_pay_freq +
+        pol_payd +
+        pol_usage +
+        s(drv_age1, by = drv_sex1, bs = "tp") +
+        s(drv_age_lic1, bs = "tp") +
+        s(drv_age2, by = drv_drv2, bs = "tp") +
+        s(vh_age, bs = "tp") +
+        vh_fuel +
+        vh_type +
+        s(vh_speed, bs = "tp") +
+        s(vh_value, bs = "tp") +
+        s(vh_weight, bs = "tp") +
+        s(density, bs = "tp") +
+        s(population, bs = "tp") +
+        s(vh_make_model, bs = "re"),
+      family = Tweedie(p = 1.46, link = "log"),
+      data = baked_data,
+      nthreads = 5,
+      discrete = TRUE
+    )
+  
+  rm(df, baked_data)
+  list(
+    recipe = rec,
+    model = res_gam
+  )
 }
 
 

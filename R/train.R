@@ -1,3 +1,10 @@
+suppressPackageStartupMessages({
+library(recipes)
+# library(xgboost)
+library(mgcv)
+library(tidyverse)
+})
+
 source("model.R")  # Load your code.
 
 # This script expects the dataset as a sys.args argument.
