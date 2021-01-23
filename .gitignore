@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Sphinx documentation
+docs/_build/
+
+# IPython Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Text editors and IDEs
+.vscode
+.idea
+.vim
+
+claims.csv
+prices.csv
+
+python/
+*.Rproj
+.Rproj.user/
