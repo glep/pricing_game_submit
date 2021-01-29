@@ -23,3 +23,7 @@ prices.csv
 python/
 *.Rproj
 .Rproj.user/
+*.zip
+*.RDS
+*.csv
+.Rhistory

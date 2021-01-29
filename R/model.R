@@ -1,6 +1,11 @@
 # In this module, we ask you to define your pricing model, in R.
 
-# TODO: load your packages here.
+suppressPackageStartupMessages({
+  library(recipes)
+  # library(xgboost)
+  library(mgcv)
+  library(tidyverse)
+})
 # Don't forget to list all packages you use to the `install.R` file.
 
 
@@ -70,7 +75,8 @@ fit_model <- function (x_raw, y_raw){
 
   # First, create all new features, if necessary
   
-  df <- bind_cols(y_raw, x_raw) %>% as_tibble() 
+  df <- bind_cols(y_raw, x_raw) %>% as_tibble() %>% 
+    mutate(claim_amount = pmin(claim_amount, 1e4))
   
   rec <- define_recipe(df) %>% prep(training = df, retain = FALSE)
   baked_data <- bake(rec, new_data = df)
@@ -130,10 +136,14 @@ predict_expected_claim <- function(model, x_raw){
 	# -------
 	# avg_claims: a one-dimensional array of the same length as X_raw, with one
 	#     average claim per contract (in same order). These average claims must be POSITIVE (>0).
-	
-  y_predict = predict(model, newdata = x_raw)  # tweak this to work with your model
-
-  return(y_predict)  
+  
+  baked_data <- 
+    bake(
+      model$recipe,
+      new_data = x_raw
+    )
+  
+  predict(model$model, newdata = baked_data, type = "response") %>% as.numeric()
 }
 
 
@@ -157,7 +167,7 @@ predict_premium <- function(model, x_raw){
   # prices: a one-dimensional array of the same length as X_raw, with one
   #     price per contract (in same order). These prices must be POSITIVE (>0).
 	
-  return(predict_expected_claim(model, x_raw) * 2)  # Default: multiply prices by 2
+  return(predict_expected_claim(model, x_raw) * 1.15)  # Default: multiply prices by 2
 }
 
 
@@ -170,8 +180,8 @@ save_model <- function(model){
   #  forget to update the load_model method to be compatible.
 	
   # Save in `trained_model.RData`.
+  write_rds(model, file = "trained_model.RDS", "xz", compression = 9L)
 
-  save(model, file='trained_model.RData')
 }
 
 
@@ -181,6 +191,6 @@ load_model <- function(){
  #    This is called by the server to evaluate your submission on hidden data.
  #    Only modify this *if* you modified save_model.
 
-  load('trained_model.RData')
+  model <- read_rds("trained_model.RDS")
   return(model)
 }
