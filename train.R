@@ -15,6 +15,8 @@ train_data = read.csv(input_dataset)
 Xdata = within(train_data, rm('claim_amount'))
 ydata = train_data['claim_amount']
 
-model = fit_model(Xdata, ydata)
+x_raw = Xdata
+y_raw = ydata
+model = fit_model(x_raw = Xdata, y_raw = ydata)
 
 save_model(model)
