@@ -19,6 +19,7 @@ docs/_build/
 
 claims.csv
 prices.csv
+training.csv
 
 python/
 *.Rproj
