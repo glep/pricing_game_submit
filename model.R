@@ -5,10 +5,17 @@ suppressPackageStartupMessages({
   library(recipes)
   library(xgboost)
   library(mgcv)
+  library(janitor)
   library(tidyverse)
 })
 # Don't forget to list all packages you use to the `install.R` file.
 source("utils.R")
+
+conflicted::conflict_prefer("filter", "dplyr")
+conflicted::conflict_prefer("lag", "dplyr")
+conflicted::conflict_prefer("collapse", "dplyr")
+conflicted::conflict_prefer("slice", "dplyr")
+conflicted::conflict_prefer("step", "recipes")
 
 
 # (optional) data pre-processing function.
@@ -160,7 +167,6 @@ fit_combine <- function(df) {
          eval_metric            = "gamma-nloglik",
          seed                   = 2508)
   
-  result_combine <- 
     list(
       freq_model = 
         fit_freqsev_xgb(
@@ -177,7 +183,6 @@ fit_combine <- function(df) {
           model_type = "sev"
         )
     )
-  
 }
 
 predict_expected_claim_xgb_combine <- function(model, x_raw){
@@ -236,7 +241,7 @@ predict_expected_claim_xgb_combine <- function(model, x_raw){
     df_pred_sev,
     by = "unique_id"
   ) %>% 
-    mutate(pred = pred_freq * pred_sev)
+    mutate(pred = pred_freq * pred_sev) 
 }
   
 # GAM noveh part ----------------------------------------------------------
@@ -317,7 +322,7 @@ predict_expected_claim_tweedie_gam <- function(model, x_raw){
     mutate(
       pred = predict(model$model, newdata = baked_data, type = "response") %>%
         as.numeric()
-    )
+    ) 
 }
 
 # Fit functions -----------------------------------------------------------
@@ -350,9 +355,22 @@ fit_model <- function (x_raw, y_raw){
   combine_model <- fit_combine(df)
   gam_model <- fit_model_tweedie_noveh(df)
   
+  pred_combine <- predict_expected_claim_xgb_combine(combine_model, df)
+  pred_gam <- predict_expected_claim_tweedie_gam(gam_model, df)
+  
+  mult_constants <- 
+    bind_cols(
+      y_raw,
+      pred_combine %>% select(pred_combine = pred),
+      pred_gam %>% select(pred_gam = pred)
+    ) %>% 
+    as_tibble() %>% 
+    summarise(across(c(pred_combine, pred_gam), ~ sum(claim_amount) / sum(.x)))
+  
   list(
-    xgb_model = combine_model,
-    gam_model = gam_model
+    xgb_model      = combine_model,
+    gam_model      = gam_model,
+    mult_constants = mult_constants
   )
   
 }
@@ -379,13 +397,17 @@ predict_expected_claim <- function(model, x_raw){
   #     average claim per contract (in same order). These average claims must be POSITIVE (>0).
   x_raw <- x_raw %>% mutate(unique_id = row_number())
   
-  xgb_predict <- predict_expected_claim_xgb_combine(model$xgb_model, x_raw)
-  gam_predict <- predict_expected_claim_tweedie_gam(model$gam_model, x_raw)
+  xgb_predict <- predict_expected_claim_xgb_combine(model$xgb_model, x_raw) 
+  gam_predict <- predict_expected_claim_tweedie_gam(model$gam_model, x_raw) 
   
   full_join(
     xgb_predict %>% transmute(unique_id, pred_xgb = pred),
     gam_predict %>% transmute(unique_id, pred_gam = pred) 
   ) %>% 
+    mutate(
+      pred_xgb = pred_xgb * model$mult_constants$pred_combine,
+      pred_gam = pred_gam * model$mult_constants$pred_gam
+    ) %>% 
     mutate(pred = .5 * (pred_xgb + pred_gam)) %>% 
     arrange(unique_id) %>% 
     pull(pred)
