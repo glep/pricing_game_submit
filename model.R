@@ -325,11 +325,99 @@ predict_expected_claim_tweedie_gam <- function(model, x_raw){
     ) 
 }
 
+# gam_s -------------------------------------------------------------------
+
+define_gam_recipe_s <- function(df) {
+  rec <- 
+    recipe(
+      data = df[1, ],
+      formula = claim_amount ~ .
+    ) %>% 
+    update_role(expo, new_role = "weight") %>% 
+    update_role(unique_id, new_role = "id") %>% 
+    update_role(id_policy, new_role = "policy_number") %>% 
+    # update_role(c(year), new_role = "control") %>% 
+    update_role(claim, new_role = "freq_outcome") %>% 
+    update_role(fold, new_role = "cv_fold") %>% 
+    step_mutate(density = population / town_surface_area, role = "predictor") %>% 
+    step_mutate(
+      vh_weight = na_if(vh_weight, 0),
+      population = na_if(population, 0)
+    ) %>% 
+    step_mutate(
+      town_id               = paste(population, 10*town_surface_area, sep = "_"),
+      age_when_licensed     =  drv_age1  - drv_age_lic1 ,
+      young_man_drv1        = as.integer((drv_age1 <=24 & drv_sex1 == "M")),
+      fast_young_man_drv1   = as.integer((drv_age1 <=30 & drv_sex1 == "M" & vh_speed >=200)),
+      young_man_drv2        = as.integer((drv_age2 <=24 & drv_sex2 == "M")),
+      # no_known_claim_values = as.integer(pol_no_claims_discount %in% no_known_claim_values),
+      year                  = pmin(year, 4) %>% as_factor(), 
+      vh_current_value      = vh_value * 0.8^(vh_age -1),  #depreciate 20% per year
+      role = "predictor"
+    ) %>% 
+    step_range(c(drv_age1, drv_age2), min = 18, max = 75) %>% 
+    step_mutate(drv_age2 = if_else(drv_drv2 == "Yes", true = drv_age2, false = -10)) %>% 
+    step_novel(all_nominal()) %>%
+    step_string2factor(all_nominal()) %>% 
+    step_knnimpute(
+      c(vh_speed, vh_value, vh_weight),
+      options = list(nthread = parallel::detectCores())
+    ) %>% 
+    step_meanimpute(intersect(all_numeric(), all_predictors())) %>%
+    step_modeimpute(intersect(all_nominal(), all_predictors())) %>%
+    step_other(all_nominal(), threshold = 1e3)
+}
+
+fit_model_tweedie_s <- function (df) {
+  
+  rec <- define_gam_recipe_s(df[1, ]) %>% prep(training = df, retain = FALSE)
+  baked_data <- bake(rec, new_data = df)
+  rec_has_role(rec, "predictor")
+  
+  res_gam <- 
+    bam(
+      formula = claim_amount ~
+        s(pol_no_claims_discount, bs = "tp") +
+        pol_coverage +
+        s(pol_duration, bs = "tp") +
+        s(pol_sit_duration, bs = "tp") +
+        pol_pay_freq +
+        pol_payd +
+        pol_usage +
+        s(drv_age1, by = drv_sex1, bs = "tp") +
+        s(drv_age_lic1, bs = "tp") +
+        s(drv_age2, by = drv_drv2, bs = "tp") +
+        s(vh_age, bs = "tp") +
+        vh_fuel +
+        vh_type +
+        s(vh_speed, bs = "tp") +
+        s(vh_value, bs = "tp") +
+        s(vh_weight, bs = "tp") +
+        s(density, bs = "tp") +
+        s(population, bs = "tp") +
+        s(vh_current_value, bs = "tp") +
+        fast_young_man_drv1 + young_man_drv1 + young_man_drv2 +
+        town_id +
+        s(age_when_licensed, bs = "tp") +
+        year,
+      family = Tweedie(p = 1.46, link = "log"),
+      data = baked_data,
+      nthreads = 5,
+      discrete = TRUE
+    )
+  
+  rm(df, baked_data)
+  
+  list(
+    recipe = rec,
+    model = res_gam
+  )
+}
+
 # Fit functions -----------------------------------------------------------
 
 
-
-fit_model <- function (x_raw, y_raw){
+fit_model <- function (x_raw, y_raw) {
   # Model training function: given training data (X_raw, y_raw), train this pricing model.
   
   # Parameters
@@ -350,31 +438,23 @@ fit_model <- function (x_raw, y_raw){
     mutate(claim_amount = pmin(claim_amount, capping_threshold)) %>% 
     mutate(unique_id = row_number(), fold = 1)
   
-  
-  # Combine part
-  combine_model <- fit_combine(df)
-  gam_model <- fit_model_tweedie_noveh(df)
-  
-  pred_combine <- predict_expected_claim_xgb_combine(combine_model, df)
+  gam_model <- fit_model_tweedie_s(df)
   pred_gam <- predict_expected_claim_tweedie_gam(gam_model, df)
   
   mult_constants <- 
     bind_cols(
       y_raw,
-      pred_combine %>% select(pred_combine = pred),
       pred_gam %>% select(pred_gam = pred)
     ) %>% 
     as_tibble() %>% 
-    summarise(across(c(pred_combine, pred_gam), ~ sum(claim_amount) / sum(.x)))
+    summarise(across(c(pred_gam), ~ sum(claim_amount) / sum(.x)))
   
   list(
-    xgb_model      = combine_model,
     gam_model      = gam_model,
     mult_constants = mult_constants
   )
   
 }
-
 
 predict_expected_claim <- function(model, x_raw){
   # Model prediction function: predicts the average claim based on the pricing model.
@@ -397,19 +477,9 @@ predict_expected_claim <- function(model, x_raw){
   #     average claim per contract (in same order). These average claims must be POSITIVE (>0).
   x_raw <- x_raw %>% mutate(unique_id = row_number())
   
-  xgb_predict <- predict_expected_claim_xgb_combine(model$xgb_model, x_raw) 
   gam_predict <- predict_expected_claim_tweedie_gam(model$gam_model, x_raw) 
-  
-  full_join(
-    xgb_predict %>% transmute(unique_id, pred_xgb = pred),
-    gam_predict %>% transmute(unique_id, pred_gam = pred) 
-  ) %>% 
-    mutate(
-      pred_xgb = pred_xgb * model$mult_constants$pred_combine,
-      pred_gam = pred_gam * model$mult_constants$pred_gam
-    ) %>% 
-    mutate(pred = .5 * (pred_xgb + pred_gam)) %>% 
-    arrange(unique_id) %>% 
+  gam_predict %>% 
+    mutate(pred = pred * model$mult_constant$pred_gam) %>% 
     pull(pred)
 }
 
