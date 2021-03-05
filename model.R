@@ -284,8 +284,6 @@ define_recipe_gam <- function(df) {
       young_man_drv1        = as.integer((drv_age1 <=24 & drv_sex1 == "M")),
       fast_young_man_drv1   = as.integer((drv_age1 <=30 & drv_sex1 == "M" & vh_speed >=200)),
       young_man_drv2        = as.integer((drv_age2 <=24 & drv_sex2 == "M")),
-      # TODO ne pas oublier de mettre un 4 pour la version finale
-      # year                  = pmin(year, 3) %>% as_factor(), 
       vh_current_value      = vh_value * 0.8^(vh_age -1),  #depreciate 20% per year
       role = "predictor"
     ) %>% 
@@ -294,8 +292,10 @@ define_recipe_gam <- function(df) {
     step_novel(all_nominal()) %>%
     step_string2factor(all_nominal()) %>% 
     step_meanimpute(intersect(all_numeric(), all_predictors())) %>%
-    step_modeimpute(intersect(all_nominal(), all_predictors())) %>%
-    step_other(all_nominal(), threshold = 1e3)
+    step_modeimpute(intersect(all_nominal(), all_predictors())) %>% 
+    step_other(town_id, threshold = 50) %>% 
+    step_other(vh_make_model, threshold = 5) %>% 
+    step_novel(c(town_id, vh_make_model))
 }
 
 fit_gam_tw <- function(df) {
@@ -328,8 +328,8 @@ fit_gam_tw <- function(df) {
         s(population, bs = "tp") +
         s(vh_current_value, bs = "tp") +
         fast_young_man_drv1 + young_man_drv1 + young_man_drv2 +
-        # s(vh_make_model, bs = "re") +
-        # s(town_id, bs = "re") +
+        s(vh_make_model, bs = "re") +
+        s(town_id, bs = "re") +
         s(age_when_licensed, bs = "tp"),
       family = Tweedie(p = 1.46, link = "log"),
       data = baked_data,
@@ -338,7 +338,6 @@ fit_gam_tw <- function(df) {
     )
   
   model_mult <- sum(df$uncapped_amount) / sum(res_gam$fitted.values)
-  
   
   rm(df, baked_data)
   

@@ -11,10 +11,12 @@ if (length(args) >= 1) {
 # Load the dataset.
 train_data = read.csv(input_dataset) %>% as_tibble()
 
-newbusiness_idpolicy <- train_data %>% distinct(id_policy) %>% slice_sample(n = 10)
-full_data <- train_data
-train_data <- train_data %>% anti_join(newbusiness_idpolicy) %>% 
-  slice_sample(n = 1e4)
+# Run only to quickly test the code on a small sample
+if (FALSE) {
+  full_data <- train_data
+  train_data <- train_data %>% slice_sample(n = 1e4)
+  # train_data <- full_data
+}
 
 # Create a model, train it, then save it.
 Xdata = within(train_data, rm('claim_amount'))
