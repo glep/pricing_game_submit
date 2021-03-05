@@ -583,17 +583,23 @@ predict_expected_claim <- function(model, x_raw){
   data_renewal     <- x_raw %>% inner_join(model$id_policy)
   data_newbusiness <- x_raw %>% anti_join(model$id_policy)
   
-  pred_renewal <- 
-    predict_combine_xgb_claims(
-      model   = model$renewal,
-      newdata = data_renewal
-    )
+  pred_renewal <- NULL
+  if (nrow(data_renewal) > 0) {
+    pred_renewal <- 
+      predict_combine_xgb_claims(
+        model   = model$renewal,
+        newdata = data_renewal
+      )
+  } 
   
-  pred_newbusiness <- 
-    predict_gam_tw(
-      model = model$new_business,
-      x_raw = data_newbusiness
-    )
+  pred_newbusiness <- NULL
+  if (nrow(data_newbusiness) > 0) {
+    pred_newbusiness <- 
+      predict_gam_tw(
+        model = model$new_business,
+        x_raw = data_newbusiness
+      )
+  }
   
   bind_rows(
     pred_renewal,
