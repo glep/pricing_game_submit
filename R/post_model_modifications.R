@@ -114,14 +114,17 @@ train_claims_correction <- function(model, df, pred) {
     select(unique_id, id_policy, year, claim_amount) %>% 
     arrange(id_policy, year) %>% 
     group_by(id_policy) %>% 
-    mutate(claim_count = cumsum(claim_amount > 0), claim_count = lag(claim_count, n = 1, default = 0)) %>% 
+    mutate(
+      claim_count = cumsum(claim_amount > 0),
+      claim_count = lag(claim_count, n = 1, default = 0)
+    ) %>% 
     ungroup() %>% 
     left_join(pred, by = "unique_id") %>% 
     mutate(hist_freq = claim_count / year) 
   
   df_claims_correction <- df %>%
     group_by(id_policy) %>%
-    summarise(hist_freq = sum(claim_amount > 0) / 3) %>% 
+    summarise(hist_freq = sum(claim_amount > 0) / 4) %>% 
     left_join(
       gaa %>% 
         group_by(hist_freq) %>% 
