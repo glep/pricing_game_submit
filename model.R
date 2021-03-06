@@ -291,6 +291,12 @@ define_recipe_gam <- function(df) {
     step_mutate(drv_age2 = if_else(drv_drv2 == "Yes", true = drv_age2, false = -10)) %>% 
     step_novel(all_nominal()) %>%
     step_string2factor(all_nominal()) %>% 
+    step_meanimpute(vh_age) %>% 
+    step_knnimpute(
+      c(vh_speed, vh_value, vh_weight),
+      impute_with = imp_vars(c(vh_age, vh_fuel, vh_type, drv_age1)),
+      options = list(nthread = 7)
+    ) %>% 
     step_meanimpute(intersect(all_numeric(), all_predictors())) %>%
     step_modeimpute(intersect(all_nominal(), all_predictors())) %>% 
     step_other(town_id, threshold = 50) %>% 

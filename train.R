@@ -14,7 +14,8 @@ train_data = read.csv(input_dataset) %>% as_tibble()
 # Run only to quickly test the code on a small sample
 if (FALSE) {
   full_data <- train_data
-  train_data <- train_data %>% slice_sample(n = 1e4)
+  train_data <- train_data %>% 
+    inner_join(train_data %>% distinct(id_policy) %>% slice_sample(n = 1e4))
   # train_data <- full_data
 }
 
