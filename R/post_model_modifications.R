@@ -68,7 +68,8 @@ apply_veh_correction <- function(model, newdata, df_pred) {
   newdata %>% 
     select(unique_id, vh_make_model) %>% 
     left_join(model$veh_correction, by = "vh_make_model") %>% 
-    replace_na(list(correction = 1)) %>% 
+    # When a vehicule is unknown, surcharge by 50%, just in case.
+    replace_na(list(correction = 1.5)) %>% 
     left_join(df_pred, by = "unique_id") %>% 
     mutate(pred = pred * correction) %>% 
     select(unique_id, pred)
@@ -100,6 +101,7 @@ apply_city_correction <- function(model, newdata, df_pred) {
   newdata %>% 
     select(unique_id, population, town_surface_area) %>% 
     left_join(model$city_correction, by = c("population", "town_surface_area")) %>% 
+    # When city is unknown, no surcharge
     replace_na(list(correction = 1)) %>% 
     left_join(df_pred, by = "unique_id") %>% 
     mutate(pred = pred * correction) %>% 
@@ -119,7 +121,7 @@ train_claims_correction <- function(model, df, pred) {
       claim_count = lag(claim_count, n = 1, default = 0)
     ) %>% 
     ungroup() %>% 
-    left_join(pred, by = "unique_id") %>% 
+    left_join(pred, by = "unique_id") %>%
     mutate(hist_freq = claim_count / year) 
   
   df_claims_correction <- df %>%
