@@ -1,0 +1,410 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Load everything
+
+```{r}
+source("model.R")  # Load your code.
+theme_set(theme_bw())
+trained_model <- load_model()
+trained_model3 <- read_rds("trained_model3.RDS")
+```
+
+```{r}
+train_data = read.csv("training.csv") %>% as_tibble() 
+x_raw <- train_data %>% select(-claim_amount)
+```
+
+```{r}
+prices <- predict_premium(trained_model, x_raw)
+claims <- predict_expected_claim(trained_model, x_raw)
+
+train_data <- train_data %>% 
+  mutate(
+    prices_full_xgb = !!prices,
+    claims_full_xgb = !!claims
+  )
+```
+
+```{r}
+prices <- predict_premium(trained_model3, x_raw)
+claims <- predict_expected_claim(trained_model3, x_raw)
+
+train_data <- train_data %>% 
+  mutate(
+    prices_train_xgb = !!prices,
+    claims_train_xgb = !!claims
+  )
+
+```
+```{r}
+prices <-
+  predict_premium(
+    model = trained_model3,
+    x_raw = x_raw %>% 
+      mutate(year == 5, id_policy = paste0("bwah_", row_number()))
+    )
+claims <-
+  predict_expected_claim(
+    model = trained_model3,
+    x_raw = x_raw %>% 
+      mutate(year == 5, id_policy = paste0("bwah_", row_number()))
+    )
+
+train_data <- train_data %>% 
+  mutate(
+    prices_train_gam = !!prices,
+    claims_train_gam = !!claims
+  )
+```
+
+```{r}
+prices <-
+  predict_premium(
+    model = trained_model,
+    x_raw = x_raw %>% 
+      mutate(year == 5, id_policy = paste0("bwah_", row_number()))
+    )
+claims <-
+  predict_expected_claim(
+    model = trained_model,
+    x_raw = x_raw %>% 
+      mutate(year == 5, id_policy = paste0("bwah_", row_number()))
+    )
+
+train_data <- train_data %>% 
+  mutate(
+    prices_full_gam = !!prices,
+    claims_full_gam = !!claims
+  )
+```
+
+# Check profit margin
+
+```{r}
+train_data %>% 
+  group_by(year) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  )
+```
+
+Profit margin but on chosen market
+
+```{r}
+train_data %>% 
+  left_join(trained_model3$renewal$veh_correction %>% rename(cor_veh = correction)) %>% 
+  left_join(trained_model3$renewal$city_correction %>% rename(cor_city = correction)) %>% 
+  left_join(trained_model3$renewal$claims_correction %>%
+              mutate(correction = 1) %>% 
+              rename(cor_claims = correction)) %>%
+  mutate(total_cor = cor_veh * cor_city * cor_claims ) %>% 
+  filter(total_cor < 1.1) %>% 
+  filter(year == 4) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = everything()) %>% arrange(desc(value))
+```
+
+XGB (renewal) model is better than GAM. But it's normal, since xgb has access to
+past claims info.
+
+# Check all features
+
+## drv_age1
+
+```{r}
+train_data %>% 
+  group_by(drv_age1) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = starts_with("claims"), names_to = "method", values_to = "lr") %>% 
+  filter(drv_age1 < 30) %>% 
+  ggplot(aes(x = drv_age1, y = lr, color = method)) +
+  geom_line() + geom_point() +
+  ggthemes::scale_color_colorblind() 
+```
+
+```{r}
+train_data %>% 
+  group_by(year, drv_age1) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = starts_with("claims"), names_to = "method", values_to = "lr") %>% 
+  filter(drv_age1 < 30) %>% 
+  ggplot(aes(x = drv_age1, y = lr, color = method)) +
+  geom_line() + geom_point() +
+  ggthemes::scale_color_colorblind() +
+  facet_wrap(~year)
+```
+
+## Past claims
+
+```{r}
+train_data %>% 
+  filter(year == 4) %>% 
+  left_join(trained_model3$renewal$freq_model$past_claims) %>% 
+  group_by(claim_count) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -claim_count) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  ggplot(aes(claim_count, value, color = name)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+```
+
+## Vehicle
+
+```{r}
+train_data %>% 
+  filter(year < 4) %>% 
+  group_by(vh_make_model) %>% 
+  summarise(
+    expo = n(),
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  filter(expo > 10) %>% select(-expo) %>% 
+  pivot_longer(cols = -vh_make_model) %>% 
+  ggplot(aes(name, value)) +
+  geom_violin() +
+  coord_flip() +
+  ylim(0, 2)
+
+```
+
+```{r}
+train_data %>% 
+  filter(year == 4) %>% 
+  group_by(vh_make_model) %>% 
+  summarise(
+    expo = n(),
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  filter(expo > 10) %>% select(-expo) %>% 
+  pivot_longer(cols = -vh_make_model) %>% 
+  ggplot(aes(name, value)) +
+  geom_violin() +
+  coord_flip() +
+  ylim(0, 2)
+
+```
+
+## pol_no_claims_discount
+
+```{r}
+train_data %>% 
+  mutate(
+    groupe =
+      cut(
+        pol_no_claims_discount,
+        breaks = c(-1, 0, .01, .02, .05, .1, .2, .3, .4 ,.5, Inf),
+        ordered_result = TRUE
+        ) %>% 
+      as.numeric()
+  ) %>% 
+  group_by(year, groupe) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    .groups = "drop"
+  ) %>% 
+  pivot_longer(cols = starts_with("claims"), names_to = "method", values_to = "lr") %>% 
+  ggplot(aes(x = groupe, y = lr, color = method)) +
+  geom_line() + 
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~year) 
+```
+## pol_coverage
+
+```{r}
+
+train_data %>% 
+  group_by( pol_coverage) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -pol_coverage) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  ggplot(aes(pol_coverage, value, color = name)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    .groups = "drop"
+  ) %>% 
+  print
+  pivot_longer(cols = starts_with("claims"), names_to = "method", values_to = "lr") %>% 
+  ggplot(aes(x = groupe, y = lr, color = method)) +
+  geom_line() + 
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~year) 
+```
+Vraiment intéressant celui là.
+
+# Other
+
+Iiich, but that is not surprising, all policy with claims have increased prices with manual corrections.
+
+```{r}
+claim2 <- predict_expected_claim(trained_model, x_raw %>% 
+                             mutate(year == 5, id_policy = paste0("bwah_", row_number())))
+prices2 <- predict_premium(trained_model, x_raw %>% 
+                             mutate(year == 5, id_policy = paste0("bwah_", row_number())))
+train_data %>% 
+  select(id_policy, year, claim_amount, vh_make_model, town_surface_area, population) %>% 
+  mutate(pred_claims = !!claim2, pred_premium = !!prices2) %>% 
+  left_join(trained_model$renewal$veh_correction %>% rename(cor_veh = correction)) %>% 
+  left_join(trained_model$renewal$city_correction %>% rename(cor_city = correction)) %>% 
+  left_join(trained_model$renewal$claims_correction %>% rename(cor_claims = correction)) %>% 
+  filter(cor_veh * cor_city * cor_claims < 1.1) %>% 
+  summarise(
+    lr      = sum(claim_amount) / sum(pred_claims),
+    lr_prem = sum(claim_amount) / sum(pred_premium)
+  )
+```
+
+
+# Other
+
+Check that all id_policy are hard-coded
+
+```{r}
+trained_model$id_policy
+trained_model$renewal$freq_model$past_claims
+```
+
+# stress test
+
+```{r}
+prices2 <- predict_premium(trained_model, x_raw %>% mutate(year == 5))
+tibble(
+  p1 = prices,
+  p2 = prices2
+) %>% 
+  summarise(max = max(abs(p1 - p2)))
+```
+
+```{r}
+prices2 <- predict_premium(trained_model, x_raw %>% 
+                             mutate(year == 5, vh_make_model = "gaaa"))
+tibble(
+  p1 = prices,
+  p2 = prices2
+) %>% 
+  summarise(ratio = p2 / p1) %>% 
+  ggplot(aes(ratio)) + geom_density()
+```
+```{r}
+prices2 <- predict_premium(trained_model, x_raw %>% 
+                             mutate(year == 5, population = 1e6))
+tibble(
+  p1 = prices,
+  p2 = prices2
+) %>% 
+  mutate(ratio = p2 / p1) %>% 
+  ggplot(aes(ratio)) + geom_density()
+```
+
+```{r}
+tibble(
+  p1 = prices,
+  p2 = prices2
+) %>% 
+  mutate(ratio = p2 / p1) %>% 
+  ggplot(aes(ratio)) + geom_density()
+```
+
+```{r}
+train_data %>% 
+  select(id_policy, year, claim_amount, vh_make_model, town_surface_area, population) %>% 
+  mutate(pred_claims = !!claims, pred_premium = !!prices2) %>% 
+  summarise(
+    lr      = sum(claim_amount) / sum(pred_claims),
+    lr_prem = sum(claim_amount) / sum(pred_premium)
+  )
+```
+
+```{r}
+claim2 <- predict_expected_claim(trained_model, x_raw %>% 
+                             mutate(year == 5, id_policy = paste0("bwah_", row_number())))
+prices2 <- predict_premium(trained_model, x_raw %>% 
+                             mutate(year == 5, id_policy = paste0("bwah_", row_number())))
+train_data %>% 
+  select(id_policy, year, claim_amount, vh_make_model, town_surface_area, population) %>% 
+  mutate(pred_claims = !!claim2, pred_premium = !!prices2) %>% 
+  left_join(trained_model$renewal$veh_correction %>% rename(cor_veh = correction)) %>% 
+  left_join(trained_model$renewal$city_correction %>% rename(cor_city = correction)) %>% 
+  left_join(trained_model$renewal$claims_correction %>% rename(cor_claims = correction)) %>% 
+  filter(cor_veh * cor_city * cor_claims < 1.1) %>% 
+  summarise(
+    lr      = sum(claim_amount) / sum(pred_claims),
+    lr_prem = sum(claim_amount) / sum(pred_premium)
+  )
+```
+
+
+# Renewal model
+
+## Check correction
+
+### Vehicle
+
+```{r}
+trained_model$renewal$veh_correction %>% 
+  pull(correction) %>% 
+  quantile(probs = seq(0, 1, by = .05)) %>% 
+  enframe()
+```
+
+### Claims
+
+```{r}
+trained_model$renewal$claims_correction %>% 
+  pull(correction) %>% 
+  quantile(probs = seq(0, 1, by = .05)) %>% 
+  enframe()
+```
+
+```{r}
+trained_model$renewal$claims_correction %>% count(correction)
+```
+
+### City
+
+
+```{r}
+trained_model$renewal$city_correction %>% 
+  pull(correction) %>% 
+  quantile(probs = seq(0, 1, by = .05)) %>% 
+  enframe()
+```
+
+# Zip submission file
+
+```{r}
+zip::zip(
+  zipfile = "lastday_submission.zip",
+  files = c("config.json", "install.R", "model.R",
+            "predict.R", "train.R", "trained_model.RDS", "R")
+)
+
+```
+

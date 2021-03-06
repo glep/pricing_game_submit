@@ -111,6 +111,7 @@ apply_city_correction <- function(model, newdata, df_pred) {
 # Claims correction -------------------------------------------------------
 
 train_claims_correction <- function(model, df, pred) {
+  nb_year <- df %>% distinct(year) %>% nrow()
   
   gaa <- df %>%
     select(unique_id, id_policy, year, claim_amount) %>% 
@@ -126,7 +127,7 @@ train_claims_correction <- function(model, df, pred) {
   
   df_claims_correction <- df %>%
     group_by(id_policy) %>%
-    summarise(hist_freq = sum(claim_amount > 0) / 4) %>% 
+    summarise(hist_freq = sum(claim_amount > 0) / nb_year) %>% 
     left_join(
       gaa %>% 
         group_by(hist_freq) %>% 
