@@ -448,7 +448,7 @@ fit_xgb_freq_claims <- function(df, params) {
   rm(df)
   
   freq_xgb$past_claims <- gaa2 %>%
-    filter(year == 3) %>%
+    filter(year == 4) %>%
     select(id_policy, losses, claim_count)
   
   freq_xgb
