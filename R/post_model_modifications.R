@@ -111,34 +111,22 @@ apply_city_correction <- function(model, newdata, df_pred) {
 # Claims correction -------------------------------------------------------
 
 train_claims_correction <- function(model, df, pred) {
-  nb_year <- df %>% distinct(year) %>% nrow()
+  # Not proud, but I have to hard-code this one
+  claims_correction <- 
+    tribble(
+      ~nb_claim, ~correction,
+      0, 1,
+      1, 1,
+      2, 1.2,
+      3, 1.3,
+      4, 2
+    )
   
-  gaa <- df %>%
-    select(unique_id, id_policy, year, claim_amount) %>% 
-    arrange(id_policy, year) %>% 
-    group_by(id_policy) %>% 
-    mutate(
-      claim_count = cumsum(claim_amount > 0),
-      claim_count = lag(claim_count, n = 1, default = 0)
-    ) %>% 
-    ungroup() %>% 
-    left_join(pred, by = "unique_id") %>%
-    mutate(hist_freq = claim_count / year) 
-  
-  df_claims_correction <- df %>%
+  model$claims_correction <-  df %>%
     group_by(id_policy) %>%
-    summarise(hist_freq = sum(claim_amount > 0) / nb_year) %>% 
-    left_join(
-      gaa %>% 
-        group_by(hist_freq) %>% 
-        summarise(lr = sum(claim_amount) / sum(pred)) %>% 
-        add_row(hist_freq = 1, lr = 10),
-      by = "hist_freq"
-    ) %>% 
-    mutate(correction = pmax(1, lr)) %>% 
+    summarise(nb_claim = sum(claim_amount > 0)) %>% 
+    left_join(claims_correction, by = "nb_claim") %>% 
     select(id_policy, correction)
-  
-  model$claims_correction <- df_claims_correction
   
   model
 }

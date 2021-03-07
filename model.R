@@ -449,8 +449,8 @@ fit_xgb_freq_claims <- function(df, params) {
   freq_xgb$past_claims <-
     df %>% group_by(id_policy) %>% 
     summarise(
-      losses      = sum(claim_amount),
-      claim_count = sum(claim_amount > 0)
+      losses      = sum(claim_amount) / n(),
+      claim_count = sum(claim_amount > 0) / n()
     )
   rm(df)
   
@@ -495,8 +495,8 @@ fit_xgb_sev_claims <- function(df, params) {
   sev_xgb$past_claims <- 
     df %>% group_by(id_policy) %>% 
     summarise(
-      losses      = sum(claim_amount),
-      claim_count = sum(claim_amount > 0)
+      losses      = sum(claim_amount) / n(),
+      claim_count = sum(claim_amount > 0) /n()
     )
   rm(df)
   
@@ -624,6 +624,9 @@ predict_expected_claim <- function(model, x_raw){
 predict_premium <- function(model, x_raw){
   
   x_raw <- x_raw %>% mutate(unique_id = row_number()) %>% as_tibble()
+  
+  id_jeunes <- x_raw %>% filter(drv_age1 < 25) %>% pull(unique_id)
+  
   pred  <- predict_expected_claim(model, x_raw) 
   
   df_pred <- x_raw %>% 
@@ -655,7 +658,14 @@ predict_premium <- function(model, x_raw){
     df_pred_renewal,
     df_pred_newbusiness
   ) %>% 
-    mutate(pred = if_else(condition = drv_age1 < 25, true = pred * 1.2, false = pred)) %>% 
+    mutate(
+      pred = 
+        if_else(
+          condition = unique_id %in% id_jeunes,
+          true = pred * 1.2,
+          false = pred
+        )
+    ) %>% 
     mutate(pred = pmax(20, pred) * 1.18) %>% 
     arrange(unique_id) %>% 
     pull(pred)

@@ -30,12 +30,12 @@ model = fit_model(x_raw = Xdata, y_raw = ydata)
 
 save_model(model)
 
-switch_3years <- TRUE
+switch_3years <- FALSE
 if (switch_3years) {
   model2 <- 
     fit_model(
       x_raw = train_data %>% filter(year <= 3) %>% select(-claim_amount),
-      y_raw = train_data %>% filter(year <= 3) %>% select(claim_amount),
+      y_raw = train_data %>% filter(year <= 3) %>% select(claim_amount)
     )
   
   write_rds(model2, file = "trained_model3.RDS")

@@ -95,6 +95,18 @@ train_data %>%
 Profit margin but on chosen market
 
 ```{r}
+chosen_policy <- train_data %>% 
+  left_join(trained_model3$renewal$veh_correction %>% rename(cor_veh = correction)) %>% 
+  left_join(trained_model3$renewal$city_correction %>% rename(cor_city = correction)) %>% 
+  left_join(trained_model3$renewal$claims_correction %>%
+              mutate(correction = 1) %>% 
+              rename(cor_claims = correction)) %>%
+  mutate(total_cor = cor_veh * cor_city * cor_claims ) %>% 
+  filter(total_cor < 1.1) %>% 
+  pull(id_policy)
+```
+
+```{r}
 train_data %>% 
   left_join(trained_model3$renewal$veh_correction %>% rename(cor_veh = correction)) %>% 
   left_join(trained_model3$renewal$city_correction %>% rename(cor_city = correction)) %>% 
@@ -122,13 +134,19 @@ past claims info.
 train_data %>% 
   group_by(drv_age1) %>% 
   summarise(
-    across(starts_with("claims"), ~sum(claim_amount) / sum(.x))
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
   ) %>% 
-  pivot_longer(cols = starts_with("claims"), names_to = "method", values_to = "lr") %>% 
+  pivot_longer(
+    cols = c(starts_with("claims"), starts_with("prices")),
+    names_to = "method", values_to = "lr"
+  ) %>% 
   filter(drv_age1 < 30) %>% 
+  mutate(prices = str_detect(method, "prices")) %>% 
   ggplot(aes(x = drv_age1, y = lr, color = method)) +
   geom_line() + geom_point() +
-  ggthemes::scale_color_colorblind() 
+  ggthemes::scale_color_colorblind() +
+  facet_wrap(~prices)
 ```
 
 ```{r}
@@ -146,6 +164,113 @@ train_data %>%
 ```
 
 ## Past claims
+
+
+
+```{r}
+train_data %>% 
+  filter(year == 4) %>% 
+  left_join(trained_model3$renewal$freq_model$past_claims) %>% 
+  group_by(claim_count) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -claim_count) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  mutate(model = name %>% str_remove_all("claims_") %>% str_remove_all("prices_")) %>% 
+  ggplot(aes(claim_count, value, color = model)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+```
+
+```{r}
+train_data %>% 
+  filter(year == 4) %>% 
+  left_join(trained_model3$renewal$freq_model$past_claims) %>% 
+  group_by(claim_count) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  print
+  select(claim_count, claims_full_xgb, claims_train_xgb)
+```
+
+```{r}
+train_data %>% 
+  filter(year == 3) %>% 
+  left_join(
+    train_data %>% filter(year < 3) %>% group_by(id_policy) %>% 
+      summarise(claim_count = sum(claim_amount > 0)),
+    by = "id_policy"
+  ) %>% 
+  group_by(claim_count) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  select(claim_count, claims_full_xgb, claims_train_xgb)
+train_data %>% 
+  filter(year == 4) %>% 
+  left_join(
+    train_data %>% filter(year < 4) %>% group_by(id_policy) %>% 
+      summarise(claim_count = sum(claim_amount > 0)),
+    by = "id_policy"
+  ) %>% 
+  group_by(claim_count) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  select(claim_count, claims_full_xgb, claims_train_xgb)
+
+```
+
+```{r}
+l1 <- train_data %>% filter(year == 3) %>% filter(claim_amount > 0) %>% pull(id_policy)
+l2 <- train_data %>% filter(year == 2) %>% filter(claim_amount == 0) %>% pull(id_policy)
+l3 <- train_data %>% filter(year == 1) %>% filter(claim_amount == 0) %>% pull(id_policy)
+ii <- intersect(l1, l2) %>% intersect(l3)
+
+train_data %>% 
+  filter(year == 4) %>% 
+  filter(id_policy %in% ii) %>% 
+  left_join(
+    train_data %>% filter(year < 4) %>% group_by(id_policy) %>% 
+      summarise(claim_count = sum(claim_amount > 0)),
+    by = "id_policy"
+  ) %>% 
+  group_by(claim_count) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  select(claim_count, claims_full_xgb, claims_train_xgb)
+
+```
+
+
+```{r}
+train_data %>% 
+  filter(year == 4) %>% 
+  left_join(trained_model$renewal$freq_model$past_claims) %>% 
+  group_by(claim_count) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -claim_count) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  mutate(model = name %>% str_remove_all("claims_") %>% str_remove_all("prices_")) %>% 
+  ggplot(aes(claim_count, value, color = model)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+```
 
 ```{r}
 train_data %>% 
@@ -231,8 +356,9 @@ train_data %>%
 ## pol_coverage
 
 ```{r}
-
 train_data %>% 
+  filter(year == 4) %>% 
+  # filter(year == 4, id_policy %in% chosen_policy) %>% 
   group_by( pol_coverage) %>% 
   summarise(
     across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
@@ -240,45 +366,164 @@ train_data %>%
   ) %>% 
   pivot_longer(cols = -pol_coverage) %>% 
   mutate(prices = str_detect(name, "prices")) %>% 
-  ggplot(aes(pol_coverage, value, color = name)) +
+  mutate(model = name %>% str_remove_all("claims_") %>% str_remove_all("prices_")) %>% 
+  ggplot(aes(pol_coverage, value, color = model)) +
   geom_point() +
   ggthemes::scale_color_colorblind() +
   geom_hline(aes(yintercept = 1), linetype = 3) +
   facet_wrap(~prices)
-  summarise(
-    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
-    .groups = "drop"
-  ) %>% 
-  print
-  pivot_longer(cols = starts_with("claims"), names_to = "method", values_to = "lr") %>% 
-  ggplot(aes(x = groupe, y = lr, color = method)) +
-  geom_line() + 
-  ggthemes::scale_color_colorblind() +
-  geom_hline(aes(yintercept = 1), linetype = 3) +
-  facet_wrap(~year) 
 ```
 Vraiment intéressant celui là.
 
-# Other
-
-Iiich, but that is not surprising, all policy with claims have increased prices with manual corrections.
+## pol duration
 
 ```{r}
-claim2 <- predict_expected_claim(trained_model, x_raw %>% 
-                             mutate(year == 5, id_policy = paste0("bwah_", row_number())))
-prices2 <- predict_premium(trained_model, x_raw %>% 
-                             mutate(year == 5, id_policy = paste0("bwah_", row_number())))
 train_data %>% 
-  select(id_policy, year, claim_amount, vh_make_model, town_surface_area, population) %>% 
-  mutate(pred_claims = !!claim2, pred_premium = !!prices2) %>% 
-  left_join(trained_model$renewal$veh_correction %>% rename(cor_veh = correction)) %>% 
-  left_join(trained_model$renewal$city_correction %>% rename(cor_city = correction)) %>% 
-  left_join(trained_model$renewal$claims_correction %>% rename(cor_claims = correction)) %>% 
-  filter(cor_veh * cor_city * cor_claims < 1.1) %>% 
+  filter(year == 4, id_policy %in% chosen_policy) %>%
+  # filter(year == 4) %>% 
+  mutate(pol_duration = pmin(pol_duration, 10)) %>% 
+  group_by(pol_duration) %>% 
   summarise(
-    lr      = sum(claim_amount) / sum(pred_claims),
-    lr_prem = sum(claim_amount) / sum(pred_premium)
-  )
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -pol_duration) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  mutate(model = name %>% str_remove_all("claims_") %>% str_remove_all("prices_")) %>% 
+  ggplot(aes(pol_duration, value, color = model)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+```
+
+## pol_pay_Freq
+
+```{r}
+train_data %>% 
+  filter(year == 4, id_policy %in% chosen_policy) %>%
+  # filter(year == 4) %>% 
+  group_by(pol_pay_freq) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -pol_pay_freq) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  mutate(model = name %>% str_remove_all("claims_") %>% str_remove_all("prices_")) %>% 
+  ggplot(aes(pol_pay_freq, value, color = model)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+```
+```{r}
+train_data %>% count(pol_pay_freq)
+```
+
+## drv_age2
+
+```{r}
+train_data %>% 
+  drop_na(drv_age2) %>% 
+  # filter(year == 4, id_policy %in% chosen_policy) %>% 
+  filter(year == 4) %>% 
+  group_by(drv_age2) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -drv_age2) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  mutate(model = name %>% str_remove_all("claims_") %>% str_remove_all("prices_")) %>% 
+  ggplot(aes(drv_age2, value, color = model)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+```
+
+## vh value
+
+```{r}
+train_data %>% 
+  mutate(expo = 1) %>% 
+  enablr::add_equal_weight_group(table = ., ratio = vh_value, expo = expo, nb = 20) %>% 
+  # filter(year == 4, id_policy %in% chosen_policy) %>% 
+  filter(year == 4) %>% 
+  group_by(groupe) %>% 
+  summarise(
+    across(starts_with("claims"), ~sum(claim_amount) / sum(.x)),
+    across(starts_with("prices"), ~sum(claim_amount) / sum(.x))
+  ) %>% 
+  pivot_longer(cols = -groupe) %>% 
+  mutate(prices = str_detect(name, "prices")) %>% 
+  mutate(model = name %>% str_remove_all("claims_") %>% str_remove_all("prices_")) %>% 
+  ggplot(aes(groupe, value, color = model)) +
+  geom_point() +
+  ggthemes::scale_color_colorblind() +
+  geom_hline(aes(yintercept = 1), linetype = 3) +
+  facet_wrap(~prices)
+```
+
+# Variable importance
+
+```{r}
+model <- trained_model$renewal$freq_model
+
+  if (!all.equal(baked_data$unique_id, x_raw$unique_id))
+    stop("problem in predict_expected_claim_xgb_base")
+  
+  gaa2 <- train_data %>%
+    mutate(expo = 1) %>% 
+    mutate(claim = as.numeric(claim_amount > 0)) %>% 
+    mutate(uncapped_amount = claim_amount) %>% 
+    # mutate(claim_amount = pmin(claim_amount, capping_threshold)) %>% 
+    mutate(unique_id = row_number(), fold = 1) %>% 
+    select(unique_id, id_policy, year, claim_amount) %>% 
+    arrange(id_policy, year) %>% 
+    group_by(id_policy) %>% 
+    mutate(
+      losses = cumsum(claim_amount), 
+      losses = lag(losses, n = 1, default = 0),
+      claim_count = cumsum(claim_amount > 0),
+      claim_count = lag(claim_count, n = 1, default = 0)
+    ) %>% 
+    ungroup() %>% 
+    mutate(across(c(losses, claim_count), ~.x / pmax(year - 1, 2)))
+  df <- 
+    left_join(
+      train_data %>% mutate(unique_id = row_number()),
+      gaa2 %>% select(unique_id, losses, claim_count),
+      by = "unique_id"
+    )
+  
+  baked_data <- 
+    bake(
+      model$recipe,
+      new_data = df
+    )
+  
+  baked_data <- 
+    left_join(
+      baked_data,
+      model$df_control,
+      by = rec_has_role(model$recipe, "control")
+    )
+  
+  pred_terms <- 
+  predict(
+    object = model$model, 
+    newdata = baked_data %>%
+      slice_sample(n = 1e4) %>% 
+      select(all_of(rec_has_role(model$recipe, "predictor"))) %>% 
+      as.matrix(),
+    predcontrib = TRUE
+  ) %>% 
+    as_tibble()
+  
+  pred_terms %>% summarise(across(.fns = ~sum(abs(.x)))) %>% 
+    pivot_longer(cols = everything()) %>% arrange(desc(value))
 ```
 
 
@@ -292,6 +537,24 @@ trained_model$renewal$freq_model$past_claims
 ```
 
 # stress test
+
+## check that unknown vehicle gives 50% surcharge
+
+```{r}
+pol_info <- x_raw %>%
+  filter(id_policy %in% chosen_policy) %>% 
+  slice_sample(n = 1)
+prem1 <- predict_premium(trained_model, pol_info)
+prem2 <- predict_premium(trained_model, pol_info %>% mutate(vh_make_model = "bwah"))
+
+prem2 / prem1
+
+prem1 <- predict_premium(trained_model, pol_info %>% mutate(id_policy = "gaaa"))
+prem2 <- predict_premium(trained_model, pol_info %>% mutate(id_policy = "gaaa", vh_make_model = "bwah"))
+
+prem2 / prem1
+```
+
 
 ```{r}
 prices2 <- predict_premium(trained_model, x_raw %>% mutate(year == 5))
