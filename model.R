@@ -621,7 +621,11 @@ predict_premium <- function(model, x_raw){
   pred  <- predict_expected_claim(model, x_raw) 
   
   df_pred <- x_raw %>% 
-    select(unique_id, id_policy, vh_make_model, population, town_surface_area) %>% 
+    select(
+      unique_id, id_policy,
+      vh_make_model, population, town_surface_area,
+      drv_age1
+    ) %>% 
     mutate(pred = !!pred)
   
   df_pred_renewal     <- df_pred %>% inner_join(model$id_policy)
@@ -645,6 +649,7 @@ predict_premium <- function(model, x_raw){
     df_pred_renewal,
     df_pred_newbusiness
   ) %>% 
+    mutate(pred = if_else(condition = drv_age1 < 25, true = pred * 1.2, false = pred)) %>% 
     mutate(pred = pmax(20, pred) * 1.18) %>% 
     arrange(unique_id) %>% 
     pull(pred)
