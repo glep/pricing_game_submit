@@ -426,7 +426,7 @@ fit_xgb_freq_claims <- function(df, params) {
       claim_count = lag(claim_count, n = 1, default = 0)
     ) %>% 
     ungroup() %>% 
-    mutate(across(c(losses, claim_count), ~.x / year))
+    mutate(across(c(losses, claim_count), ~.x / pmax(year - 1, 2)))
   df <- 
     left_join(
       df,
@@ -445,11 +445,14 @@ fit_xgb_freq_claims <- function(df, params) {
       params        = params,
       model_type    = "freq"
     )
-  rm(df)
   
-  freq_xgb$past_claims <- gaa2 %>%
-    filter(year == max(year)) %>%
-    select(id_policy, losses, claim_count)
+  freq_xgb$past_claims <-
+    df %>% group_by(id_policy) %>% 
+    summarise(
+      losses      = sum(claim_amount),
+      claim_count = sum(claim_amount > 0)
+    )
+  rm(df)
   
   freq_xgb
 }
@@ -467,7 +470,7 @@ fit_xgb_sev_claims <- function(df, params) {
       claim_count = lag(claim_count, n = 1, default = 0)
     ) %>% 
     ungroup() %>% 
-    mutate(across(c(losses, claim_count), ~.x / year))
+    mutate(across(c(losses, claim_count), ~.x / pmax(year - 1, 2)))
   df <- 
     left_join(
       df,
@@ -488,11 +491,14 @@ fit_xgb_sev_claims <- function(df, params) {
       params        = params,
       model_type    = "sev"
     )
-  rm(df)
   
-  sev_xgb$past_claims <- gaa2 %>%
-    filter(year == max(year)) %>%
-    select(id_policy, losses, claim_count)
+  sev_xgb$past_claims <- 
+    df %>% group_by(id_policy) %>% 
+    summarise(
+      losses      = sum(claim_amount),
+      claim_count = sum(claim_amount > 0)
+    )
+  rm(df)
   
   sev_xgb
 }
