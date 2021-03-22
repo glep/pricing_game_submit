@@ -77,6 +77,10 @@ apply_veh_correction <- function(model, newdata, df_pred) {
 
 # City correction ---------------------------------------------------------
 
+# Would be better to split by renewal/new business
+# For renewal, I should merge by id_policy and exclude the claims from
+# city or vehicle correction
+# Bwah, I'll just lose a few risky policies, no big deal.
 train_city_correction <- function(model, df, pred) {
   
   df_city_correction <- df %>% 
