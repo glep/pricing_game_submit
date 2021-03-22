@@ -124,72 +124,6 @@ predict_expected_claim_xgb <- function(model, x_raw){
     select(unique_id, pred)
 }
 
-# xgb combine new ---------------------------------------------------------
-
-fit_freq_xgb1 <- function(df) {
-  message(Sys.time(), "\ttrain recipe")
-  
-  params <- 
-    list(
-      max.depth        = 6,
-      min_child_weight = 10,
-      eta              = 0.01,
-      objective        = "count:poisson",
-      gamma            = 0,
-      subsample        = .8,
-      colsample_bytree = .8,
-      base_score       = 1,
-      eval_metric      = "poisson-nloglik",
-      seed             = 2508
-    )
-  
-  rec <- define_recipe_xgb1(df)# %>% prep(training = df, retain = FALSE)
-  # baked_data <- bake(rec, new_data = df)
-  
-  message(Sys.time(), "\ttrain model")
-  freq_xgb <- 
-    fit_xgb(
-      recipe        = rec,
-      training_data = df,
-      params        = params,
-      model_type    = "freq"
-    )
-  rm(df)
-  freq_xgb
-}
-
-fit_sev_xgb1 <- function(df) {
-  params <- 
-    list(
-      max.depth        = 4,
-      min_child_weight = 2000,
-      eta              = 0.01,
-      objective        = "reg:gamma",
-      gamma            = 0,
-      subsample        = 0.8,
-      colsample_bytree = 0.8,
-      base_score       = 1,
-      eval_metric      = "gamma-nloglik",
-      seed             = 2508
-    )
-  
-  message(Sys.time(), "\ttrain recipe")
-  rec <- define_recipe_xgb1(df) %>% 
-    update_role(claim_amount, new_role = "outcome") %>% 
-    update_role(claim, new_role = "rien")
-  
-  message(Sys.time(), "\ttrain model")
-  sev_xgb <- 
-    fit_xgb(
-      recipe        = rec,
-      training_data = df,
-      params        = params,
-      model_type    = "sev"
-    )
-  rm(df)
-  sev_xgb
-}
-
 predict_combine_xgb <- function(model, newdata) {
   pred_freq <- 
     predict_expected_claim_xgb(
@@ -211,54 +145,6 @@ predict_combine_xgb <- function(model, newdata) {
     select(unique_id, pred)
   
 }
-
-define_recipe_xgb1 <- function(df) {
-  rec <- 
-    recipe(
-      data = df[1, ],
-      formula = claim ~ .
-    ) %>% 
-    update_role(expo, new_role = "weight") %>% 
-    update_role(unique_id, new_role = "id") %>% 
-    update_role(id_policy, new_role = "policy_number") %>% 
-    update_role(c(year), new_role = "control") %>%
-    update_role(claim_amount, new_role = "combine_outcome") %>% 
-    update_role(uncapped_amount, new_role = "combine_outcome") %>% 
-    update_role(fold, new_role = "cv_fold") %>% 
-    step_mutate(density = population / town_surface_area, role = "predictor") %>% 
-    step_mutate(
-      vh_weight = na_if(vh_weight, 0),
-      population = na_if(population, 0)
-    ) %>% 
-    step_mutate(
-      town_id               = paste(population, 10*town_surface_area, sep = "_"),
-      age_when_licensed     =  drv_age1  - drv_age_lic1 ,
-      young_man_drv1        = as.integer((drv_age1 <=24 & drv_sex1 == "M")),
-      fast_young_man_drv1   = as.integer((drv_age1 <=30 & drv_sex1 == "M" & vh_speed >=200)),
-      young_man_drv2        = as.integer((drv_age2 <=26 & drv_sex2 == "M")),
-      young_wom_drv2        = as.integer((drv_age2 <=26 & drv_sex2 != "M")),
-      # TODO ne pas oublier de mettre un 4 pour la version finale
-      year                  = pmin(year, 4) %>% as_factor(), 
-      vh_current_value      = vh_value * 0.8^(vh_age -1),  #depreciate 20% per year
-      role = "predictor"
-    ) %>% 
-    step_range(c(drv_age1, drv_age2), min = 18, max = 75) %>% 
-    step_mutate(drv_age2 = if_else(drv_drv2 == "Yes", true = drv_age2, false = -10)) %>% 
-    step_novel(all_nominal()) %>%
-    step_string2factor(all_nominal()) %>% 
-    # step_knnimpute(
-    #   c(vh_speed, vh_value, vh_weight),
-    #   options = list(nthread = parallel::detectCores() - 1)
-    # ) %>%
-    # step_meanimpute(intersect(all_numeric(), all_predictors())) %>%
-    # step_modeimpute(intersect(all_nominal(), all_predictors())) %>%
-    step_other(all_nominal(), threshold = 1e3) %>% 
-    step_dummy_xgb(df = df) 
-  
-  rm(df)
-  rec
-}
-
 
 # GAM model for new business ----------------------------------------------
 
